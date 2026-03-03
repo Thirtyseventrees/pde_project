@@ -36,6 +36,11 @@ The solver now supports multiple numerical choices:
 - `scripts/plot_error.py`: L2/H1 error plotting from CSV
 - `scripts/plot_3d_surface.py`: 3D surface visualization from VTU files
 - `scripts/generate_plots.sh`: post-run plotting pipeline
+- `scripts/run_experiments.sh`: batch runner for all convergence/dissipation/dispersion experiments
+- `scripts/plot_convergence.py`: h- and dt-convergence rate plots (log-log with fitted slopes)
+- `scripts/plot_energy_comparison.py`: overlay energy curves across schemes (dissipation analysis)
+- `scripts/plot_error_comparison.py`: overlay error curves across schemes (dispersion analysis)
+- `scripts/dispersion_analysis.py`: theoretical dispersion relation and amplification factor plots
 
 ## Build
 
@@ -104,6 +109,32 @@ where `method_tag = <time_scheme>-<mass_type>-p<fe_degree>`.
 
 `error-<method_tag>.csv` columns:
 - `step,time,L2_error,H1_error`
+
+## Analysis Workflow
+
+### 1. Run all experiments
+
+```bash
+bash scripts/run_experiments.sh
+```
+
+This runs all convergence studies (h and dt), scheme comparisons, and FE degree comparisons, then generates all comparison plots automatically.
+
+### 2. Theoretical dispersion relation (no solver needed)
+
+```bash
+python3 scripts/dispersion_analysis.py result/ --show
+```
+
+Produces `dispersion_relation.png` (phase velocity error) and `dissipation_amplification.png` (amplitude ratio per step).
+
+### 3. Individual comparison plots (after solver runs)
+
+```bash
+python3 scripts/plot_convergence.py result/
+python3 scripts/plot_energy_comparison.py result/      # dissipation
+python3 scripts/plot_error_comparison.py result/        # dispersion
+```
 
 ## Notes
 
