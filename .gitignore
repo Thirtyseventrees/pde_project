@@ -1,0 +1,19 @@
+# Build and generated outputs
+build/
+build-local/
+result/
+
+# Python env/cache
+.venv/
+__pycache__/
+*.pyc
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# IDE/OS
+.vscode/
+.DS_Store
