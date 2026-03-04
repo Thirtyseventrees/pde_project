@@ -54,6 +54,39 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+def set_dynamic_ylim(ax, curves, include_values=None, pad_ratio=0.08):
+    """
+    Set y-limits from finite values in curves with a small padding.
+    Optionally include specific reference values (e.g. y=1).
+    """
+    vals = []
+    for c in curves:
+        arr = np.asarray(c, dtype=float)
+        arr = arr[np.isfinite(arr)]
+        if arr.size:
+            vals.append(arr)
+
+    if include_values:
+        vals.append(np.asarray(include_values, dtype=float))
+
+    if not vals:
+        return
+
+    all_vals = np.concatenate(vals)
+    y_min = float(np.min(all_vals))
+    y_max = float(np.max(all_vals))
+
+    if y_max <= y_min:
+        center = y_min
+        half = max(1e-3, 0.05 * max(1.0, abs(center)))
+        ax.set_ylim(center - half, center + half)
+        return
+
+    span = y_max - y_min
+    pad = max(1e-4, pad_ratio * span)
+    ax.set_ylim(y_min - pad, y_max + pad)
+
+
 def main():
     args = [a for a in sys.argv[1:] if a != '--show']
     show_plot = '--show' in sys.argv
@@ -96,21 +129,25 @@ def main():
 
     # --- Panel 1: Semi-discrete (spatial discretization only) ---
     ax = axes[0]
-    ax.plot(xi / np.pi, ratio_semi_lumped, '-', color='#2196F3', linewidth=2,
+    panel1_curves = []
+    ax.plot(xi, ratio_semi_lumped, '-', color='#2196F3', linewidth=2,
             label='Lumped mass')
-    ax.plot(xi / np.pi, ratio_semi_consistent, '-', color='#E91E63', linewidth=2,
+    panel1_curves.append(ratio_semi_lumped)
+    ax.plot(xi, ratio_semi_consistent, '-', color='#E91E63', linewidth=2,
             label='Consistent mass')
+    panel1_curves.append(ratio_semi_consistent)
     ax.axhline(1.0, color='black', linewidth=0.8, linestyle='--', alpha=0.5, label='Exact')
-    ax.set_xlabel('$\\xi / \\pi = kh/\\pi$', fontsize=13)
+    ax.set_xlabel('$kh$', fontsize=13)
     ax.set_ylabel('$\\omega_h / \\omega_{\\rm exact}$', fontsize=13)
     ax.set_title('Semi-discrete dispersion\n(spatial only, P1 FEM)', fontsize=13)
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0.5, 1.15)
+    ax.set_xlim(0, np.pi)
+    set_dynamic_ylim(ax, panel1_curves, include_values=[1.0])
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=11)
 
     # --- Panel 2: Central difference (fully discrete) ---
     ax = axes[1]
+    panel2_curves = []
     for cfl_idx, cfl in enumerate(cfl_values):
         for mass_label, omega2_h in [('lumped', omega2_lumped),
                                       ('consistent', omega2_consistent)]:
@@ -124,23 +161,25 @@ def main():
             omega_d[valid] = np.arccos(arg[valid]) / cfl  # normalized by h
 
             ratio = omega_d / omega_exact
+            panel2_curves.append(ratio[valid])
 
             style = '-' if mass_label == 'lumped' else '--'
             color = ['#2196F3', '#4CAF50', '#FF9800'][cfl_idx]
-            ax.plot(xi[valid] / np.pi, ratio[valid], linestyle=style, color=color,
+            ax.plot(xi[valid], ratio[valid], linestyle=style, color=color,
                     linewidth=1.5, label=f'CFL={cfl}, {mass_label}')
 
     ax.axhline(1.0, color='black', linewidth=0.8, linestyle='--', alpha=0.5)
-    ax.set_xlabel('$\\xi / \\pi = kh/\\pi$', fontsize=13)
+    ax.set_xlabel('$kh$', fontsize=13)
     ax.set_ylabel('$\\omega_h^d / \\omega_{\\rm exact}$', fontsize=13)
     ax.set_title('Central difference\n(fully discrete, P1 FEM)', fontsize=13)
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0.5, 1.15)
+    ax.set_xlim(0, np.pi)
+    set_dynamic_ylim(ax, panel2_curves, include_values=[1.0])
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8, ncol=2)
 
     # --- Panel 3: Newmark β=1/4, γ=1/2 (fully discrete) ---
     ax = axes[2]
+    panel3_curves = []
     beta = 0.25
     for cfl_idx, cfl in enumerate(cfl_values):
         for mass_label, omega2_h in [('lumped', omega2_lumped),
@@ -160,34 +199,34 @@ def main():
             omega_d[valid] = np.arccos(arg[valid]) / cfl
 
             ratio = omega_d / omega_exact
+            panel3_curves.append(ratio[valid])
 
             style = '-' if mass_label == 'lumped' else '--'
             color = ['#2196F3', '#4CAF50', '#FF9800'][cfl_idx]
-            ax.plot(xi[valid] / np.pi, ratio[valid], linestyle=style, color=color,
+            ax.plot(xi[valid], ratio[valid], linestyle=style, color=color,
                     linewidth=1.5, label=f'CFL={cfl}, {mass_label}')
 
     ax.axhline(1.0, color='black', linewidth=0.8, linestyle='--', alpha=0.5)
-    ax.set_xlabel('$\\xi / \\pi = kh/\\pi$', fontsize=13)
+    ax.set_xlabel('$kh$', fontsize=13)
     ax.set_ylabel('$\\omega_h^d / \\omega_{\\rm exact}$', fontsize=13)
     ax.set_title('Newmark ($\\beta=1/4, \\gamma=1/2$)\n(fully discrete, P1 FEM)', fontsize=13)
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0.5, 1.15)
+    ax.set_xlim(0, np.pi)
+    set_dynamic_ylim(ax, panel3_curves, include_values=[1.0])
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8, ncol=2)
 
-    fig.suptitle('Dispersion relation: numerical vs exact phase velocity', fontsize=15, y=1.03)
-    fig.tight_layout()
+    fig.suptitle('Dispersion relation: numerical vs exact phase velocity',
+                 fontsize=15, y=0.98)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
 
     out = os.path.join(out_dir, 'dispersion_relation.png')
     fig.savefig(out, dpi=150, bbox_inches='tight')
     print(f"Saved {out}")
 
-    # ---- Additional plot: dissipation (amplitude ratio) ----
-    fig2, axes2 = plt.subplots(1, 2, figsize=(14, 6))
-
-    ax = axes2[0]
+    # ---- Additional plots: dissipation (amplitude ratio), saved separately ----
+    fig_cd, ax = plt.subplots(1, 1, figsize=(8, 5))
     ax.axhline(1.0, color='black', linewidth=0.8, linestyle='--', alpha=0.5, label='Exact (no dissipation)')
-    ax.set_xlabel('$\\xi / \\pi$', fontsize=13)
+    ax.set_xlabel('$kh$', fontsize=13)
     ax.set_ylabel('Amplification factor $|G|$', fontsize=13)
     ax.set_title('Central difference\namplification per step', fontsize=13)
 
@@ -203,20 +242,24 @@ def main():
 
             style = '-' if mass_label == 'lumped' else '--'
             color = ['#2196F3', '#4CAF50', '#FF9800'][cfl_idx]
-            ax.plot(xi[valid] / np.pi, amp[valid], linestyle=style, color=color,
+            ax.plot(xi[valid], amp[valid], linestyle=style, color=color,
                     linewidth=1.5, label=f'CFL={cfl}, {mass_label}')
 
-    ax.set_xlim(0, 1)
+    ax.set_xlim(0, np.pi)
     ax.set_ylim(0.95, 1.05)
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8)
     ax.text(0.5, 0.15, 'Central difference: $|G|=1$ exactly\n(no numerical dissipation)',
             transform=ax.transAxes, fontsize=11, ha='center',
             bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.8))
+    fig_cd.tight_layout()
+    out_cd = os.path.join(out_dir, 'dissipation_amplification_central.png')
+    fig_cd.savefig(out_cd, dpi=150, bbox_inches='tight')
+    print(f"Saved {out_cd}")
 
-    ax = axes2[1]
+    fig_nm, ax = plt.subplots(1, 1, figsize=(8, 5))
     ax.axhline(1.0, color='black', linewidth=0.8, linestyle='--', alpha=0.5, label='Exact')
-    ax.set_xlabel('$\\xi / \\pi$', fontsize=13)
+    ax.set_xlabel('$kh$', fontsize=13)
     ax.set_ylabel('Amplification factor $|G|$', fontsize=13)
     ax.set_title('Newmark ($\\beta=1/4, \\gamma=1/2$)\namplification per step', fontsize=13)
 
@@ -227,24 +270,20 @@ def main():
             amp = np.ones_like(xi)
             style = '-' if mass_label == 'lumped' else '--'
             color = ['#2196F3', '#4CAF50', '#FF9800'][cfl_idx]
-            ax.plot(xi / np.pi, amp, linestyle=style, color=color,
+            ax.plot(xi, amp, linestyle=style, color=color,
                     linewidth=1.5, label=f'CFL={cfl}, {mass_label}')
 
-    ax.set_xlim(0, 1)
+    ax.set_xlim(0, np.pi)
     ax.set_ylim(0.95, 1.05)
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8)
     ax.text(0.5, 0.15, 'Newmark ($\\beta$=1/4, $\\gamma$=1/2): $|G|=1$\n(no numerical dissipation)',
             transform=ax.transAxes, fontsize=11, ha='center',
             bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.8))
-
-    fig2.suptitle('Numerical dissipation analysis: amplification factor per time step',
-                  fontsize=14, y=1.02)
-    fig2.tight_layout()
-
-    out2 = os.path.join(out_dir, 'dissipation_amplification.png')
-    fig2.savefig(out2, dpi=150, bbox_inches='tight')
-    print(f"Saved {out2}")
+    fig_nm.tight_layout()
+    out_nm = os.path.join(out_dir, 'dissipation_amplification_newmark.png')
+    fig_nm.savefig(out_nm, dpi=150, bbox_inches='tight')
+    print(f"Saved {out_nm}")
 
     if show_plot:
         plt.show()

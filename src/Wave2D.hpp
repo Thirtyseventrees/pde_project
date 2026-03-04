@@ -29,6 +29,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <vector>
 
 using namespace dealii;
 
@@ -49,11 +50,20 @@ public:
     consistent
   };
 
+  enum class BoundaryMode
+  {
+    homogeneous,
+    driven
+  };
+
   struct SolverOptions
   {
     TimeScheme   time_scheme = TimeScheme::central_difference;
     MassType     mass_type   = MassType::lumped;
+    BoundaryMode boundary_mode = BoundaryMode::homogeneous;
     unsigned int fe_degree   = 1;
+    double       newmark_beta  = 0.25;
+    double       newmark_gamma = 0.5;
   };
 
   Wave2D(const std::string &mesh_file_name_);
@@ -133,6 +143,7 @@ protected:
   mutable SparseDirectUMFPACK mass_solver;
   bool                        mass_solver_initialized = false;
   std::filesystem::path       run_output_dir;
+  std::vector<Point<dim>>     support_points;
 };
 
 #endif

@@ -37,10 +37,12 @@ The solver now supports multiple numerical choices:
 - `scripts/plot_3d_surface.py`: 3D surface visualization from VTU files
 - `scripts/generate_plots.sh`: post-run plotting pipeline
 - `scripts/run_experiments.sh`: batch runner for all convergence/dissipation/dispersion experiments
+- `scripts/run_report_supplement.sh`: batch runner for extra report figures (Newmark parameter, boundary driving, CFL scan)
 - `scripts/plot_convergence.py`: h- and dt-convergence rate plots (log-log with fitted slopes)
 - `scripts/plot_energy_comparison.py`: overlay energy curves across schemes (dissipation analysis)
 - `scripts/plot_error_comparison.py`: overlay error curves across schemes (dispersion analysis)
 - `scripts/dispersion_analysis.py`: theoretical dispersion relation and amplification factor plots
+- `scripts/plot_report_supplement.py`: generates `supplement_*.png` figures used to complete report analysis
 
 ## Build
 
@@ -67,6 +69,7 @@ make clean-results
 ```bash
 cd /home/chenyuye/homework/pde_project/build
 ./main [mesh.msh] [dt] [T] [output_every] [omega] [time_scheme] [mass_type] [fe_degree] [compute_error_each_step] [auto_plot]
+       [boundary_mode] [newmark_beta] [newmark_gamma]
 ```
 
 Arguments:
@@ -81,6 +84,9 @@ Arguments:
 8. `fe_degree`: polynomial degree (default `1`)
 9. `compute_error_each_step`: `1` (default) to compute/write error every step, `0` to write only final error
 10. `auto_plot`: `1` (default) to auto-run plotting scripts, `0` to skip auto plotting
+11. `boundary_mode`: `homogeneous` (default) or `driven` (time-dependent boundary forcing)
+12. `newmark_beta`: Newmark parameter `beta` (default `0.25`, used when `time_scheme=newmark`)
+13. `newmark_gamma`: Newmark parameter `gamma` (default `0.5`, used when `time_scheme=newmark`)
 
 Default-equivalent run:
 
@@ -126,7 +132,9 @@ This runs all convergence studies (h and dt), scheme comparisons, and FE degree 
 python3 scripts/dispersion_analysis.py result/ --show
 ```
 
-Produces `dispersion_relation.png` (phase velocity error) and `dissipation_amplification.png` (amplitude ratio per step).
+Produces `dispersion_relation.png` (phase velocity error),
+`dissipation_amplification_central.png`, and
+`dissipation_amplification_newmark.png` (amplitude ratio per step).
 
 ### 3. Individual comparison plots (after solver runs)
 
@@ -134,6 +142,17 @@ Produces `dispersion_relation.png` (phase velocity error) and `dissipation_ampli
 python3 scripts/plot_convergence.py result/
 python3 scripts/plot_energy_comparison.py result/      # dissipation
 python3 scripts/plot_error_comparison.py result/        # dispersion
+
+### 4. Report supplement experiments (extra figures)
+
+```bash
+bash scripts/run_report_supplement.sh
+```
+
+This additionally generates:
+- `result/supplement_newmark_dissipation.png`
+- `result/supplement_boundary_energy.png`
+- `result/supplement_cfl_scan.png`
 ```
 
 ## Notes

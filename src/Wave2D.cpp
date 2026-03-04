@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iomanip>
 #include <limits>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 
@@ -23,6 +24,19 @@ namespace
     {
       return std::sin(numbers::PI * p[0]) * std::sin(numbers::PI * p[1]) *
              std::cos(omega * this->get_time());
+    }
+
+    Tensor<1, Wave2D::dim>
+    gradient(const Point<Wave2D::dim> &p,
+             const unsigned int /*component*/ = 0) const override
+    {
+      Tensor<1, Wave2D::dim> grad;
+      const double           c = std::cos(omega * this->get_time());
+      grad[0] = numbers::PI * std::cos(numbers::PI * p[0]) *
+                std::sin(numbers::PI * p[1]) * c;
+      grad[1] = numbers::PI * std::sin(numbers::PI * p[0]) *
+                std::cos(numbers::PI * p[1]) * c;
+      return grad;
     }
 
   private:
@@ -99,6 +113,13 @@ Wave2D::setup()
   }
 
   {
+    support_points.resize(dof_handler.n_dofs());
+    FE_SimplexP<dim> fe_map(options.fe_degree);
+    MappingFE<dim>   mapping(fe_map);
+    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+  }
+
+  {
     DynamicSparsityPattern dsp(dof_handler.n_dofs());
     DoFTools::make_sparsity_pattern(dof_handler, dsp);
     sparsity_pattern.copy_from(dsp);
@@ -170,6 +191,16 @@ Wave2D::compute_lumped_mass()
       mass_lumped[i] = s;
     }
 
+  // Row-sum mass lumping is only valid if all diagonalized masses remain
+  // strictly positive. For higher-order bases this may fail and would cause
+  // NaNs in explicit updates.
+  if (options.mass_type == MassType::lumped)
+    for (unsigned int i = 0; i < mass_lumped.size(); ++i)
+      if (mass_lumped[i] <= 0.0)
+        throw std::runtime_error(
+          "Invalid lumped mass entry (<= 0). "
+          "Try mass_type=consistent, or lower FE degree.");
+
   for (const auto i : boundary_dofs)
     mass_lumped[i] = 1.0;
 }
@@ -211,9 +242,18 @@ Wave2D::apply_inverse_mass(Vector<double>       &dst,
 void
 Wave2D::apply_dirichlet(Vector<double> &u, const double time) const
 {
-  (void)time;
   for (const auto i : boundary_dofs)
-    u[i] = 0.0;
+    {
+      if (options.boundary_mode == BoundaryMode::homogeneous)
+        {
+          u[i] = 0.0;
+        }
+      else
+        {
+          const double y = support_points[i][1];
+          u[i] = 0.5 * std::sin(5.0 * time) * std::sin(numbers::PI * y);
+        }
+    }
 }
 
 std::string
@@ -364,6 +404,14 @@ Wave2D::run(const double       dt,
                                                       : "consistent")
             << std::endl;
   std::cout << "  FE degree: " << options.fe_degree << std::endl;
+  std::cout << "  Boundary mode: "
+            << (options.boundary_mode == BoundaryMode::homogeneous ?
+                  "homogeneous" :
+                  "driven")
+            << std::endl;
+  if (options.time_scheme == TimeScheme::newmark)
+    std::cout << "  Newmark params: beta=" << options.newmark_beta
+              << ", gamma=" << options.newmark_gamma << std::endl;
   std::cout << "  DoFs:  " << dof_handler.n_dofs() << std::endl;
   std::cout << "  h_min: " << h_min << std::endl;
   std::cout << "  dt:    " << dt << " | T: " << T << std::endl;
@@ -381,8 +429,16 @@ Wave2D::run(const double       dt,
            << "-time-" << method_tag().substr(0, method_tag().find('-'))
            << "-mass-" << (options.mass_type == MassType::lumped ? "lumped" :
                            "consistent")
+           << "-bc-"
+           << (options.boundary_mode == BoundaryMode::homogeneous ?
+                 "homogeneous" :
+                 "driven")
            << "-p" << options.fe_degree << "-dt-" << std::setprecision(8) << dt
-           << "-T-" << T << "-out-" << output_every << "-omega-" << omega
+           << "-T-" << T << "-out-" << output_every << "-omega-" << omega;
+  if (options.time_scheme == TimeScheme::newmark)
+    cfg_name << "-nmb-" << options.newmark_beta << "-nmg-"
+             << options.newmark_gamma;
+  cfg_name
            << "-errstep-" << (compute_error_each_step ? 1 : 0);
 
   run_output_dir =
@@ -399,6 +455,14 @@ Wave2D::run(const double       dt,
                              .string());
   error_file << "step,time,L2_error,H1_error\n";
 
+  const bool error_enabled =
+    compute_error_each_step &&
+    (options.boundary_mode == BoundaryMode::homogeneous);
+  if (compute_error_each_step && !error_enabled)
+    std::cout << "  Warning: skipping per-step exact error for driven boundary "
+                 "(exact manufactured solution not configured for this case)."
+              << std::endl;
+
   Vector<double> u_n(dof_handler.n_dofs());
   u_exact_ptr->set_time(0.0);
   VectorTools::interpolate(dof_handler, *u_exact_ptr, u_n);
@@ -407,8 +471,19 @@ Wave2D::run(const double       dt,
   Vector<double> v_n(dof_handler.n_dofs());
   v_exact_ptr->set_time(0.0);
   VectorTools::interpolate(dof_handler, *v_exact_ptr, v_n);
-  for (const auto i : boundary_dofs)
-    v_n[i] = 0.0;
+  auto set_boundary_velocity = [&](Vector<double> &v, const double time) {
+    for (const auto i : boundary_dofs)
+      {
+        if (options.boundary_mode == BoundaryMode::homogeneous)
+          v[i] = 0.0;
+        else
+          {
+            const double y = support_points[i][1];
+            v[i] = 2.5 * std::cos(5.0 * time) * std::sin(numbers::PI * y);
+          }
+      }
+  };
+  set_boundary_velocity(v_n, 0.0);
 
   Vector<double> Ku(dof_handler.n_dofs());
   stiffness_matrix.vmult(Ku, u_n);
@@ -431,13 +506,13 @@ Wave2D::run(const double       dt,
       apply_dirichlet(u_n, dt);
 
       auto compute_velocity = [&](const Vector<double> &u_curr,
-                                  const Vector<double> &u_prev) {
+                                  const Vector<double> &u_prev,
+                                  const double          time_curr) {
         Vector<double> v(u_curr.size());
         v = u_curr;
         v.add(-1.0, u_prev);
         v *= (1.0 / dt);
-        for (const auto idx : boundary_dofs)
-          v[idx] = 0.0;
+        set_boundary_velocity(v, time_curr);
         return v;
       };
 
@@ -445,13 +520,13 @@ Wave2D::run(const double       dt,
         output(u_n, 1, dt);
 
       {
-        const Vector<double> v_step = compute_velocity(u_n, u_nm1);
+        const Vector<double> v_step = compute_velocity(u_n, u_nm1, dt);
         energy_file << 1 << "," << dt << "," << compute_energy(u_n, v_step)
                     << "\n";
       }
 
       u_exact_ptr->set_time(dt);
-      if (compute_error_each_step)
+      if (error_enabled)
         error_file << 1 << "," << dt << ","
                    << compute_L2_error(u_n, *u_exact_ptr) << ","
                    << compute_H1_error(u_n, *u_exact_ptr) << "\n";
@@ -482,11 +557,11 @@ Wave2D::run(const double       dt,
           if (output_every > 0 && (out_step % output_every == 0))
             output(u_n, out_step, time_np1);
 
-          const Vector<double> v_step = compute_velocity(u_n, u_nm1);
+          const Vector<double> v_step = compute_velocity(u_n, u_nm1, time_np1);
           energy_file << out_step << "," << time_np1 << ","
                       << compute_energy(u_n, v_step) << "\n";
 
-          if (compute_error_each_step)
+          if (error_enabled)
             {
               u_exact_ptr->set_time(time_np1);
               error_file << out_step << "," << time_np1 << ","
@@ -495,12 +570,12 @@ Wave2D::run(const double       dt,
             }
         }
 
-      v_n = compute_velocity(u_n, u_nm1);
+      v_n = compute_velocity(u_n, u_nm1, n_steps * dt);
     }
   else
     {
-      constexpr double beta  = 0.25;
-      constexpr double gamma = 0.5;
+      const double beta  = options.newmark_beta;
+      const double gamma = options.newmark_gamma;
 
       SparseMatrix<double> system_matrix(sparsity_pattern);
       system_matrix.copy_from(stiffness_matrix);
@@ -527,7 +602,7 @@ Wave2D::run(const double       dt,
 
       energy_file << 0 << "," << 0.0 << "," << compute_energy(u_n, v_n) << "\n";
 
-      if (compute_error_each_step)
+      if (error_enabled)
         {
           u_exact_ptr->set_time(0.0);
           error_file << 0 << "," << 0.0 << ","
@@ -569,8 +644,7 @@ Wave2D::run(const double       dt,
 
           v_n = v_pred;
           v_n.add(gamma * dt, a_n);
-          for (const auto i : boundary_dofs)
-            v_n[i] = 0.0;
+          set_boundary_velocity(v_n, time_np1);
 
           u_n = u_np1;
 
@@ -581,7 +655,7 @@ Wave2D::run(const double       dt,
           energy_file << out_step << "," << time_np1 << ","
                       << compute_energy(u_n, v_n) << "\n";
 
-          if (compute_error_each_step)
+          if (error_enabled)
             {
               u_exact_ptr->set_time(time_np1);
               error_file << out_step << "," << time_np1 << ","
@@ -594,17 +668,25 @@ Wave2D::run(const double       dt,
   timer_stepping.stop();
   timer_total.stop();
 
-  u_exact_ptr->set_time(n_steps * dt);
-  const double final_l2 = compute_L2_error(u_n, *u_exact_ptr);
-  const double final_h1 = compute_H1_error(u_n, *u_exact_ptr);
   std::cout << "===============================================" << std::endl;
-  std::cout << "  Final L2 error at T = " << n_steps * dt << ": "
-            << final_l2 << std::endl;
-  std::cout << "  Final H1 error at T = " << n_steps * dt << ": "
-            << final_h1 << std::endl;
-  if (!compute_error_each_step)
-    error_file << n_steps << "," << n_steps * dt << "," << final_l2 << ","
-               << final_h1 << "\n";
+  if (options.boundary_mode == BoundaryMode::homogeneous)
+    {
+      u_exact_ptr->set_time(n_steps * dt);
+      const double final_l2 = compute_L2_error(u_n, *u_exact_ptr);
+      const double final_h1 = compute_H1_error(u_n, *u_exact_ptr);
+      std::cout << "  Final L2 error at T = " << n_steps * dt << ": "
+                << final_l2 << std::endl;
+      std::cout << "  Final H1 error at T = " << n_steps * dt << ": "
+                << final_h1 << std::endl;
+      if (!compute_error_each_step)
+        error_file << n_steps << "," << n_steps * dt << "," << final_l2 << ","
+                   << final_h1 << "\n";
+    }
+  else
+    {
+      std::cout << "  Final exact-solution error: N/A (driven boundary case)"
+                << std::endl;
+    }
 
   {
     const double E_final = compute_energy(u_n, v_n);

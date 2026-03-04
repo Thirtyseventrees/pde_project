@@ -12,11 +12,13 @@ main(int argc, char **argv)
       //   ./main [mesh.msh] [dt] [T] [output_every] [omega]
       //          [time_scheme] [mass_type] [fe_degree]
       //          [compute_error_each_step] [auto_plot]
+      //          [boundary_mode] [newmark_beta] [newmark_gamma]
       //
       // time_scheme: "cd" (default) or "newmark"
       // mass_type: "lumped" (default) or "consistent"
       // compute_error_each_step: 1 (default) or 0
       // auto_plot: 1 (default) or 0
+      // boundary_mode: "homogeneous" (default) or "driven"
       const std::string mesh_file =
         (argc > 1 ? argv[1] : std::string("../../mesh-square-h0.100000.msh"));
       const double       dt           = (argc > 2 ? std::stod(argv[2]) : 0.01);
@@ -31,6 +33,10 @@ main(int argc, char **argv)
       const bool compute_error_each_step =
         (argc > 9 ? std::stoul(argv[9]) != 0u : true);
       const bool auto_plot = (argc > 10 ? std::stoul(argv[10]) != 0u : true);
+      const std::string boundary_mode_str =
+        (argc > 11 ? argv[11] : "homogeneous");
+      const double newmark_beta  = (argc > 12 ? std::stod(argv[12]) : 0.25);
+      const double newmark_gamma = (argc > 13 ? std::stod(argv[13]) : 0.5);
 
       Wave2D::SolverOptions options;
       if (time_scheme_str == "cd")
@@ -47,9 +53,25 @@ main(int argc, char **argv)
       else
         throw std::runtime_error("Unknown mass_type: " + mass_type_str);
 
+      if (boundary_mode_str == "homogeneous")
+        options.boundary_mode = Wave2D::BoundaryMode::homogeneous;
+      else if (boundary_mode_str == "driven")
+        options.boundary_mode = Wave2D::BoundaryMode::driven;
+      else
+        throw std::runtime_error("Unknown boundary_mode: " + boundary_mode_str);
+
       if (fe_degree < 1)
         throw std::runtime_error("fe_degree must be >= 1.");
       options.fe_degree = fe_degree;
+      options.newmark_beta  = newmark_beta;
+      options.newmark_gamma = newmark_gamma;
+      if (options.time_scheme == Wave2D::TimeScheme::newmark)
+        {
+          if (options.newmark_beta <= 0.0)
+            throw std::runtime_error("newmark_beta must be > 0.");
+          if (options.newmark_gamma <= 0.0)
+            throw std::runtime_error("newmark_gamma must be > 0.");
+        }
 
       Wave2D problem(mesh_file, options);
       problem.run(dt, T, output_every, omega, compute_error_each_step);

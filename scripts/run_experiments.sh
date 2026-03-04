@@ -31,8 +31,10 @@ fi
 MESH_DIR="$PROJECT_DIR/mesh"
 OMEGA="4.442882938"  # sqrt(2)*pi for eigenmode sin(pi*x)*sin(pi*y)*cos(omega*t)
 T="2.0"
-AUTO_PLOT=0            # we run comparison plots afterwards
-COMPUTE_ERR=1
+# Current main signature:
+#   ./main mesh dt T output_every omega time_scheme mass_type fe_degree compute_error_each_step auto_plot
+AUTO_PLOT=0  # run comparison plots once at the end
+COMPUTE_ERROR_EACH_STEP=1
 
 echo "========================================"
 echo "  Wave equation batch experiments"
@@ -42,7 +44,8 @@ run_case() {
   local mesh="$1" dt="$2" out_every="$3" scheme="$4" mass="$5" p="$6"
   echo ""
   echo "--- Running: mesh=$(basename $mesh) dt=$dt scheme=$scheme mass=$mass p=$p ---"
-  "$MAIN" "$mesh" "$dt" "$T" "$out_every" "$OMEGA" "$scheme" "$mass" "$p" "$COMPUTE_ERR" "$AUTO_PLOT"
+  "$MAIN" "$mesh" "$dt" "$T" "$out_every" "$OMEGA" \
+    "$scheme" "$mass" "$p" "$COMPUTE_ERROR_EACH_STEP" "$AUTO_PLOT"
 }
 
 # ============================================================
